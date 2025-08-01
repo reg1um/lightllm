@@ -19,7 +19,7 @@ NB_HEADS = 6
 NB_EPOCH = 4000
 LR = 3e-4
 NB_LAYERS = 6
-NB_TOKENS = 2000
+NB_TOKENS = 50000
 DROPOUT = 0.2
 device='cuda'
 rd.seed(42)
@@ -271,13 +271,9 @@ def main():
     generated_text = untokenize(output_tokens, rev_vocabulary)
 
     print(generated_text)
-    print(f"Generated text length: {len(generated_text)} characters")
+    print(f"\nGenerated text length: {len(generated_text)} characters")
     end_time = time.time()
-    print(f"Training completed in {end_time - start_time:.2f} seconds")
-
-
-
-
+    print(f"Training and Generation completed in {end_time - start_time:.2f} seconds")
 
 
 if __name__ == "__main__":
