@@ -2,7 +2,7 @@
 
 A personal learning project to understand how transformers work from the ground up. Built while studying the famous "Attention is All You Need" paper and other transformer resources.
 
-## This Project:
+## This project
 
 This is my attempt at implementing a mini GPT-style language model from scratch. The goal was to really understand how attention mechanisms and transformers work, rather than just using pre-built libraries. It's trained on the "simple stories" dataset and can generate new text character by character in its style.
 
