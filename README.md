@@ -35,17 +35,19 @@ It will download some story data, train a small model, and show you what kind of
 ## The model
 
 It's intentionally small and simple:
-- Learns from character-level patterns (not words, but I want to implement word-level in the future)
+- **Tokenization**: Supports both character-level and word-level tokenization (configurable via `TOKENIZE_METHOD`)
+  - Character-level: Learns from individual character patterns
+  - Word-level: Uses a vocabulary of the 10,000 most common words (configurable) with `<unk>` token for out-of-vocabulary words
 - Has 6 transformer layers with 6 attention heads each
-- Context window of 256 characters
+- Context window of 256 tokens (characters or words depending on tokenization method)
 - About 384-dimensional embeddings (64 per head)
 
 The idea was to keep it simple enough to understand every piece, while still being complex enough to generate somewhat coherent text.
 
 ## What's next
-- Implement word-level tokenization and training
 - Optimize the hyperparameters for better performance
 - Benchmark it against other small publicly available models
+- Experiment with different vocabulary sizes and tokenization strategies
 - Many other improvements and experiments!
 
 ## Inspiration
