@@ -4,6 +4,10 @@ import os.path
 import time
 import random as rd
 
+# For Word Tokenization
+import re
+from collections import Counter
+
 from pretraitment import tokenize, untokenize
 from datasets import load_dataset
 
@@ -16,11 +20,13 @@ CONTEXT_LENGTH = 256
 BATCH_SIZE = 64
 D_MODEL = 384
 NB_HEADS = 6
-NB_EPOCH = 4000
+NB_EPOCH = 300
 LR = 3e-4
 NB_LAYERS = 6
-NB_TOKENS = 50000
+NB_TOKENS = 5000
+DATA_DIR = "data/"
 DROPOUT = 0.2
+TOKENIZE_METHOD = "word"  # 'char' or 'word'
 device='cuda'
 rd.seed(42)
 
@@ -43,54 +49,158 @@ def main():
             untokenized += rev_vocabulary[tokens]
         return untokenized
 
+
+    # Stream usage for word tokenization in order not to load the entire file into memory
+    def word_stream(line):
+        for match in re.finditer(r'\b\w+\b', line.lower()):
+            yield match.group(0)
+
+    def build_vocab(filepath, vocab_size=10000):
+        counter = Counter()
+        biggest_word = 0
+
+        for word in word_stream(filepath):
+            counter[word] += 1
+            biggest_word = max(biggest_word, len(word))
+
+        # Top N-1 words, +1 for <unk>
+        vocab = {word: idx for idx, (word, _) in enumerate(counter.most_common(vocab_size - 1))}
+        vocab['<unk>'] = vocab_size - 1
+        rev_vocab = {idx: word for word, idx in vocab.items()}
+        if len(vocab) < vocab_size:
+            print(f"Error: Vocabulary size ({len(vocab)}) is less than requested size ({vocab_size}).")
+            return
+        return vocab, rev_vocab, biggest_word
+
+    def tokenize_words(text, vocab):
+        tokens = []
+        for word in word_stream(text):
+            tokens.append(vocab.get(word, vocab['<unk>']))
+            if len(tokens) >= CONTEXT_LENGTH+1:
+                break
+        return tokens
+
+    def untokenize_words(tokens, rev_vocab):
+        untokenized = []
+        for token in tokens:
+            untokenized.append(rev_vocab.get(token, '<unk>'))
+        return ' '.join(untokenized)
+
+    def get_words(text, clen=CONTEXT_LENGTH+1):
+        words = ""
+        current_word = ""
+        for char in text:
+            if char.isalnum() or char == "'":
+                current_word += char
+            else:
+                if current_word != "":
+                    words += " " + current_word
+                    current_word = ""
+                if len(words.split()) >= clen:
+                    break
+        if current_word:
+            words += " " + current_word
+        return words
+
+    def get_batches(text, context_length=CONTEXT_LENGTH, batch_size=BATCH_SIZE, biggest_word=0):
+        batches = []
+        targets = []
+
+        while len(batches) < batch_size:
+            # Select a random starting point in the training text
+
+            if TOKENIZE_METHOD == "char":
+                rand = np.random.randint(0, len(text) - context_length - 1)
+                chunk = text[rand:rand + context_length + 1]
+                chunk = tokenize(chunk, vocabulary)
+
+            # The challenge for 'word' is that we need the correct amound of words
+            # We have to make sure that we're not too close to the end of the text
+            elif TOKENIZE_METHOD == "word":
+                # TODO: Check if that's really necessary or just loop until we get a valid chunk
+                rand = np.random.randint(0, len(text) - (context_length) * (biggest_word + 1))
+                chunk = get_words(text[rand:], clen=context_length + 1)
+                chunk = tokenize_words(chunk, vocabulary)
+
+                # If the chunk is too short, we skip it
+                if len(chunk) < context_length + 1:
+                    continue
+
+            input_seq = chunk[:context_length]
+            target_seq = chunk[1:context_length + 1]
+            batches.append(input_seq)
+            targets.append(target_seq)
+
+        return batches, targets
+
     # ============================================= Pretraitment =============================================
 
 
     # Concatenate all stories to a single big file
     # If already done, then load the files into variables
 
+
     test = ""
     train = ""
-    if not os.path.exists("train.txt"):
+    if not os.path.exists(DATA_DIR + "train.txt"):
         for stories in ds['train']:
             train += stories['text']
 
-        with open("train.txt", 'w') as train_file:
+        with open(DATA_DIR + "train.txt", 'w') as train_file:
             train_file.write(train)
         print("Stories stored in \"train.txt\"")
     else:
-        with open("train.txt", 'r') as train_file:
+        with open(DATA_DIR + "train.txt", 'r') as train_file:
             train = train_file.read()
             print("train.txt loaded!")
 
-    if not os.path.exists("test.txt"):
+    if not os.path.exists(DATA_DIR + "test.txt"):
         for stories in ds['validation']:
             test += stories['text']
-        with open("test.txt", 'w') as test_file:
+        with open(DATA_DIR + "test.txt", 'w') as test_file:
             test_file.write(test)
         print("Stories stored in \"test.txt\"")
     else:
-        with open("test.txt", 'r') as test_file:
+        with open(DATA_DIR + "test.txt", 'r') as test_file:
             test = test_file.read()
             print("test.txt loaded!")
 
+    #train = train[:100000]  # For testing purposes, limit the training text size
+
     # Define the Dataset Vocabulary, used for tokenization
-    vocabulary = {letter:idx for idx,letter in enumerate(sorted(list(set(test))))}
-    rev_vocabulary = {idx:letter for idx,letter in enumerate(sorted(list(set(test))))}
+    biggest_word = 0
+    if TOKENIZE_METHOD == "char":
+        vocabulary = {letter:idx for idx,letter in enumerate(sorted(list(set(test))))}
+        rev_vocabulary = {idx:letter for idx,letter in enumerate(sorted(list(set(test))))}
 
-    print(f"Vocabulary: {vocabulary}")
+        print(f"Vocabulary: {vocabulary}")
 
-    # To test with a smaller file
-    #tmp_train = train[:10000]
+        # To test with a smaller file
+        # tmp_train = train[:10000]
 
-    # Tokenize the train text
-    print(f"Tokenizing the training text")
-    tokenized = tokenize(train, vocabulary)
-    print(f"Text Tokenized !")
+        # Tokenize the train text
+        print(f"Tokenizing the training text")
+        tokenized = tokenize(train, vocabulary)
+        print(f"Text Tokenized !")
+    elif TOKENIZE_METHOD == "word":
+
+
+        print(f"Counting words in the training text")
+        vocabulary, rev_vocabulary, biggest_word = build_vocab(train, vocab_size=10000)
+        print(f"Vocabulary built with {len(vocabulary)} words")
+
+        """
+        print(f"Tokenizing the training text")
+        tokenized = list(token_stream("train.txt", vocabulary))
+        print(f"Text Tokenized !")
+        print(tokenized[:100])  # Display the first 100 tokens for verification
+        """
+    print(f"Biggest word length: {biggest_word}")
 
 
     # ============================================= Manage Training Batches =============================================
 
+    """
     # Create batches of randomly selected data
     def get_batches():
         batches = []
@@ -105,10 +215,12 @@ def main():
             targets.append(target_seq)
 
         return batches, targets
+    """
 
     # ============================================= Embedding =============================================
 
     vocab_size = len(vocabulary)
+    print(f"Vocabulary size: {vocab_size}")
 
     # Embedding every characters
     class CharEmbedding(nn.Module):
@@ -246,12 +358,18 @@ def main():
     start_time = time.time()
 
     for i in range(NB_EPOCH):
-        batches, targets = get_batches()
+        batches, targets = get_batches(train, biggest_word=biggest_word)
+
+        for b in batches:
+            for token in b:
+                if token >= vocab_size or token < 0:
+                    print(f"Invalid token index: {token}, vocab size: {vocab_size}")
 
         batches = torch.LongTensor(batches).to(device)
         targets = torch.LongTensor(targets).to(device)
 
         logits = model(batches)
+
         loss = loss_fn(logits.view(-1, vocab_size), targets.view(-1))
         optimizer.zero_grad()
         loss.backward()
@@ -262,13 +380,14 @@ def main():
 
     # ============================================= Generation =============================================
 
-    context = " "
-    context_tokens = torch.tensor([tokenize(context, vocabulary)]).to(device)
+    # Start of the generation
+    context = "This"
+    context_tokens = torch.tensor([tokenize_words(context, vocabulary)]).to(device)
 
     model.eval()
     output_tokens = model.generate(context_tokens)[0].tolist()
 
-    generated_text = untokenize(output_tokens, rev_vocabulary)
+    generated_text = untokenize_words(output_tokens, rev_vocabulary)
 
     print(generated_text)
     print(f"\nGenerated text length: {len(generated_text)} characters")
