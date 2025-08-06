@@ -26,7 +26,7 @@ NB_LAYERS = 6
 NB_TOKENS = 5000
 DATA_DIR = "data/"
 DROPOUT = 0.2
-TOKENIZE_METHOD = "word"  # 'char' or 'word'
+TOKENIZE_METHOD = "char"  # 'char' or 'word'
 device='cuda'
 rd.seed(42)
 
@@ -387,7 +387,10 @@ def main():
     model.eval()
     output_tokens = model.generate(context_tokens)[0].tolist()
 
-    generated_text = untokenize_words(output_tokens, rev_vocabulary)
+    if TOKENIZE_METHOD == "char":
+        generated_text = untokenize(output_tokens, rev_vocabulary)
+    elif TOKENIZE_METHOD == "word":
+        generated_text = untokenize_words(output_tokens, rev_vocabulary)
 
     print(generated_text)
     print(f"\nGenerated text length: {len(generated_text)} characters")
